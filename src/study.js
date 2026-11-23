@@ -1,4 +1,5 @@
 import { createEmptyCard, fsrs, Rating } from 'ts-fsrs';
+import { cardFieldIssue, MAX_COLLECTION_NAME, MAX_IMPORT_CARDS } from './card-data.js';
 
 const scheduler = fsrs({ enable_short_term: false, enable_fuzz: false });
 const uuid = () => crypto.randomUUID();
@@ -46,6 +47,57 @@ function requiredText(value, limit, message) {
   return value.trim();
 }
 
+function cardKey(collectionId, prompt, answers) {
+  return JSON.stringify([collectionId, normalize(prompt), [...new Set(answers.map(normalize))].sort()]);
+}
+
+function importCards(state, action) {
+  const { cards, destination, skipDuplicates } = action;
+  requireInput(['new', 'existing', 'source'].includes(destination) && typeof skipDuplicates === 'boolean' &&
+    Array.isArray(cards) && cards.length > 0 && cards.length <= MAX_IMPORT_CARDS, 'インポート設定を確認してください。');
+  const nameMessage = 'コレクション名を80文字以内で入力してください。';
+  const existing = state.collections.find(collection => collection.id === action.collectionId);
+  if (destination === 'existing') requireInput(existing, 'コレクションが見つかりません。');
+  const name = destination === 'new' ? requiredText(action.name, MAX_COLLECTION_NAME, nameMessage) : null;
+  if (name) requireInput(!state.collections.some(collection => collection.name === name),
+    '同じ名前のコレクションがあります。既存のコレクションを選ぶか、名前を変えてください。');
+
+  const imported = cards.map((item, index) => {
+    const issue = cardFieldIssue(item?.prompt, item?.answers);
+    requireInput(!issue, `インポートデータの${index + 1}件目。 ${issue}`);
+    return {
+      prompt: item.prompt.trim(), answers: item.answers.map(answer => answer.trim()),
+      source: destination === 'source' ? requiredText(item.source, MAX_COLLECTION_NAME, nameMessage) : name,
+    };
+  });
+  const byName = new Map();
+  for (const collection of state.collections) {
+    if (!byName.has(collection.name)) byName.set(collection.name, collection);
+  }
+  const keys = skipDuplicates ? new Set(state.cards.map(card => cardKey(card.collectionId, card.prompt, card.answers))) : null;
+  const collectionIds = new Set();
+  let added = 0;
+  let duplicates = 0;
+  for (const { prompt, answers, source } of imported) {
+    let collection = destination === 'existing' ? existing : byName.get(source);
+    if (!collection) {
+      collection = { id: uuid(), name: source };
+      byName.set(source, collection);
+      state.collections.push(collection);
+    }
+    const key = keys && cardKey(collection.id, prompt, answers);
+    collectionIds.add(collection.id);
+    if (keys?.has(key)) {
+      duplicates++;
+      continue;
+    }
+    keys?.add(key);
+    state.cards.push({ id: uuid(), collectionId: collection.id, prompt, answers, schedule: null });
+    added++;
+  }
+  return { added, duplicates, collectionIds: [...collectionIds] };
+}
+
 function advanceSchedule(card, correct, now, timeZone) {
   const previous = card.schedule;
   const fsrsCard = previous ? {
@@ -72,11 +124,11 @@ export function applyAction(state, action, now, timeZone) {
     }
     case 'saveCard': {
       requireInput(state.collections.some(item => item.id === action.collectionId), 'コレクションが見つかりません。');
-      const prompt = requiredText(action.prompt, 500, '問題文を500文字以内で入力してください。');
       const answers = typeof action.answers === 'string' && action.answers.length <= 3000
         ? action.answers.split('\n').map(answer => answer.trim()).filter(Boolean) : [];
-      requireInput(answers.length && answers.length <= 20 && answers.every(answer => answer.length <= 500),
-        '正解を1行につき1つ、20件まで入力してください（各500文字以内）。');
+      const issue = cardFieldIssue(action.prompt, answers);
+      requireInput(!issue, issue);
+      const prompt = action.prompt.trim();
       const card = state.cards.find(item => item.id === action.id);
       if (action.id) requireInput(card?.collectionId === action.collectionId, '問題が見つかりません。');
       if (card) {
@@ -85,6 +137,8 @@ export function applyAction(state, action, now, timeZone) {
       } else state.cards.push({ id: uuid(), collectionId: action.collectionId, prompt, answers, schedule: null });
       break;
     }
+    case 'importCards':
+      return importCards(state, action);
     case 'deleteCard':
       state.cards = state.cards.filter(card => card.id !== action.id);
       break;

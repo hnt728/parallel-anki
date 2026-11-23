@@ -1,7 +1,9 @@
-import { useEffect, useState } from 'react';
-import { ArrowLeft, ChevronRight, Pencil, Plus, Trash2 } from 'lucide-react';
+import { lazy, Suspense, useEffect, useState } from 'react';
+import { ArrowLeft, ChevronRight, Download, Pencil, Plus, Trash2 } from 'lucide-react';
 import { request } from './api.js';
 import { Header, Notice } from './ui.jsx';
+
+const ImportPanel = lazy(() => import('./ImportPanel.jsx'));
 
 export function CollectionList({ collections, onSelect, onEmpty }) {
   if (!collections.length) return <div className="empty">
@@ -39,12 +41,13 @@ export default function Collections({ state, selected, onSelect, send, busy }) {
   const [loadError, setLoadError] = useState('');
   const [editor, setEditor] = useState(null);
   const [collectionEditor, setCollectionEditor] = useState(selected === 'new');
+  const [importOpen, setImportOpen] = useState(false);
   const [reload, setReload] = useState(0);
 
   useEffect(() => {
     if (!collection?.id) return;
     let current = true;
-    request(`/api/cards?collection=${encodeURIComponent(selected)}`)
+    request(`/api/cards?collection=${encodeURIComponent(collection.id)}`)
       .then(data => { if (current) { setCards(data); setLoadError(''); } })
       .catch(error => { if (current) setLoadError(error.message); });
     return () => { current = false; };
@@ -62,13 +65,18 @@ export default function Collections({ state, selected, onSelect, send, busy }) {
 
   return <>
     {collection && <button className="back text-button" onClick={() => onSelect(null)}><ArrowLeft size={17} /> コレクション</button>}
-    <Header title={collection?.name ?? 'コレクション'} action={!collectionEditor &&
-      <button className="primary" disabled={busy} onClick={() => collection ? setEditor('new') : setCollectionEditor(true)}>
-        <Plus size={19} /> {collection ? '問題を追加' : '新規コレクション'}
-      </button>} />
+    <Header title={collection?.name ?? 'コレクション'} action={!collectionEditor && !editor && !importOpen &&
+      <div className="collection-actions">
+        <button className="secondary" disabled={busy} onClick={() => setImportOpen(true)}>
+          <Download size={18} aria-hidden="true" /> インポート
+        </button>
+        <button className="primary" disabled={busy} onClick={() => collection ? setEditor('new') : setCollectionEditor(true)}>
+          <Plus size={19} aria-hidden="true" /> {collection ? '問題を追加' : '新規コレクション'}
+        </button>
+      </div>} />
     {collection && <div className="collection-tools">
-      <button className="text-button" onClick={() => setCollectionEditor(true)}><Pencil size={16} /> 名前を変更</button>
-      <button className="text-button danger" disabled={busy} onClick={async () => {
+      <button className="text-button" disabled={importOpen || busy} onClick={() => setCollectionEditor(true)}><Pencil size={16} /> 名前を変更</button>
+      <button className="text-button danger" disabled={importOpen || busy} onClick={async () => {
         if (confirm(`「${collection.name}」と、その問題をすべて削除しますか？`) &&
           await send({ type: 'deleteCollection', id: collection.id })) onSelect(null);
       }}><Trash2 size={16} /> コレクションを削除</button>
@@ -83,13 +91,17 @@ export default function Collections({ state, selected, onSelect, send, busy }) {
         <button className="primary" disabled={busy}>保存する</button>
       </div>
     </form>}
-    {!collection && (!collectionEditor || state.collections.length > 0) &&
+    {importOpen && <Suspense fallback={<p role="status">インポート画面を開いています…</p>}>
+      <ImportPanel collections={state.collections} collection={collection} busy={busy} send={send}
+        onClose={() => setImportOpen(false)} onOpen={id => { setImportOpen(false); onSelect(id); }} />
+    </Suspense>}
+    {!collection && !importOpen && (!collectionEditor || state.collections.length > 0) &&
       <CollectionList collections={state.collections} onSelect={onSelect} />}
     {collection && editor && <CardEditor key={editor} card={cards?.find(card => card.id === editor)} busy={busy}
       onCancel={() => setEditor(null)} onSave={async values => {
         if (await send({ type: 'saveCard', id: editor === 'new' ? undefined : editor, collectionId: collection.id, ...values })) setEditor(null);
       }} />}
-    {collection && <>
+    {collection && !importOpen && <>
       <Notice>{loadError}</Notice>
       {loadError && <button className="secondary" onClick={() => setReload(value => value + 1)}>再読み込み</button>}
       {!cards && !loadError && <p role="status">読み込み中…</p>}
@@ -98,8 +110,8 @@ export default function Collections({ state, selected, onSelect, send, busy }) {
         <div><strong>{card.prompt}</strong><p>{card.answers.join(' / ')}</p>
           {card.schedule && <small>次回 {new Date(card.schedule.due).toLocaleDateString('ja-JP')}</small>}</div>
         <div className="card-buttons">
-          <button className="icon-button" aria-label="問題を編集" onClick={() => setEditor(card.id)}><Pencil size={18} /></button>
-          <button className="icon-button danger" aria-label="問題を削除" disabled={busy} onClick={async () => {
+          <button className="icon-button" aria-label="問題を編集" disabled={importOpen || busy} onClick={() => setEditor(card.id)}><Pencil size={18} /></button>
+          <button className="icon-button danger" aria-label="問題を削除" disabled={importOpen || busy} onClick={async () => {
             if (confirm('この問題を削除しますか？') && await send({ type: 'deleteCard', id: card.id })) {
               if (editor === card.id) setEditor(null);
             }

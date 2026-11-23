@@ -94,7 +94,7 @@ async function api(request, env, path) {
     if (action.revision !== revision) {
       return json({ error: '別の画面で変更がありました。最新の状態を表示しました。', state: view(state, now, zone, revision) }, 409);
     }
-    applyAction(state, action, now, zone);
+    const importResult = applyAction(state, action, now, zone);
     const serialized = JSON.stringify(state);
     if (new TextEncoder().encode(serialized).byteLength > 1_850_000) {
       throw new StudyError('保存容量の上限です。不要な問題を削除してからお試しください。');
@@ -107,7 +107,7 @@ async function api(request, env, path) {
       return json({ error: '別の画面で変更がありました。最新の状態を表示しました。',
         state: view(latest.state, now, zone, latest.revision) }, 409);
     }
-    return json(view(state, now, zone, revision + 1));
+    return json({ ...view(state, now, zone, revision + 1), importResult });
   }
   return json({ error: 'ページが見つかりません。' }, 404);
 }
