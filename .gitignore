@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.cloudflare/
+.env*
+.dev.vars*
+AGENTS.md
+playwright-report/
+test-results/
+.wrangler/

@@ -1,0 +1,29 @@
+{
+  "dependencies": {
+    "jose": "^6.2.18",
+    "jspdf": "^4.2.1",
+    "jsqr": "^1.4.0",
+    "lucide-react": "^1.78.0",
+    "qrcode": "^1.5.4",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "ts-fsrs": "^6.0.1"
+  },
+  "devDependencies": {
+    "@cloudflare/vite-plugin": "2.0.0-rc.3",
+    "@playwright/test": "^1.65.1",
+    "@vitejs/plugin-react": "^6.3.0",
+    "cf": "1.0.0-rc.2",
+    "vite": "^8.3.8"
+  },
+  "name": "parallel-anki",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "build": "cf build",
+    "dev": "cf dev",
+    "test": "node --test",
+    "deploy": "cf deploy"
+  },
+  "private": true
+}
